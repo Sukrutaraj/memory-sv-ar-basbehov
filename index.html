@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<title>Språk-Memory</title>
+
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  font-family:system-ui,sans-serif;
+  transition:background-color 0.3s;
+}
+
+body.setup{ background:#f2efe9; }
+body.blueTurn{ background:#7fb3c8; }
+body.orangeTurn{ background:#e6b566; }
+
+#controls{
+  padding:10px;
+  text-align:center;
+  font-size:22px;
+  font-weight:bold;
+}
+
+#controls button{
+  font-size:26px;
+  margin-left:10px;
+}
+
+#board{
+  position:relative;
+  width:100vw;
+  height:calc(100vh - 120px);
+  overflow:hidden;
+  touch-action:none;
+}
+
+.card{
+  position:absolute;
+  width:120px;
+  height:120px;
+  background:#bbb;
+  border-radius:12px;
+  border:2px solid #333;
+  user-select:none;
+  touch-action:none;
+}
+
+.card img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  border-radius:8px;
+  display:none;
+}
+
+.card.faceup img{ display:block; }
+.card.faceup{ background:#fff; }
+
+.card.blue{
+  border-color:#2f6f86;
+  border-width:6px;
+}
+
+.card.orange{
+  border-color:#b8742a;
+  border-width:6px;
+}
+
+#setup{
+  text-align:center;
+  padding:20px;
+}
+
+.hidden{ display:none; }
+</style>
+</head>
+
+<body class="setup">
+
+<div id="setup">
+  <h2>Språk-Memory</h2>
+
+  <p>Hur många ord?</p>
+  <select id="imageCount">
+    <option value="2">2 ord (4 kort)</option>
+    <option value="4">4 ord (8 kort)</option>
+    <option value="8">8 ord (16 kort)</option>
+  </select>
+
+  <br><br>
+
+  <p>Hur vill du vända kort?</p>
+  <select id="flipMode">
+    <option value="hold">Håll fingret på kort</option>
+    <option value="button">Tryck på knapp</option>
+  </select>
+
+  <br><br>
+  <button onclick="startGame()">▶ Spela</button>
+</div>
+
+<div id="controls" class="hidden">
+  Tur: <span id="turnText">Blå</span>
+  <button onclick="playAgain()">🔁</button>
+  <button onclick="goHome()">🏠</button>
+</div>
+
+<div id="board"></div>
+
+<script>
+
+document.addEventListener("contextmenu", e => e.preventDefault());
+
+const board = document.getElementById("board");
+const turnText = document.getElementById("turnText");
+const setupDiv = document.getElementById("setup");
+const controls = document.getElementById("controls");
+
+let currentTeam = "blue";
+let openCards = [];
+let holdTimer = null;
+let lastCount = 0;
+let flipMode = "hold";
+
+const MOVE_THRESHOLD = 25;
+
+function startGame(){
+
+  const count = parseInt(document.getElementById("imageCount").value);
+  flipMode = document.getElementById("flipMode").value;
+
+  lastCount = count;
+
+  board.innerHTML = "";
+  openCards = [];
+  currentTeam = "blue";
+
+  setupDiv.classList.add("hidden");
+  controls.classList.remove("hidden");
+  document.body.className = "blueTurn";
+  turnText.textContent = "Blå";
+
+  const cards = [];
+
+  for(let i=1;i<=count;i++){
+
+    cards.push({
+      id: i,
+      image: `img${i}_sv.jpg`,
+      audio: `img${i}_sv.mp3`
+    });
+
+    cards.push({
+      id: i,
+      image: `img${i}_ar.jpg`,
+      audio: `img${i}_ar.mp3`
+    });
+
+  }
+
+  shuffle(cards);
+  createCards(cards);
+}
+
+function playAgain(){
+  if(lastCount === 0) return;
+  document.getElementById("imageCount").value = lastCount;
+  startGame();
+}
+
+function goHome(){
+  board.innerHTML = "";
+  openCards = [];
+  lastCount = 0;
+  document.body.className = "setup";
+  setupDiv.classList.remove("hidden");
+  controls.classList.add("hidden");
+}
+
+function createCards(cards){
+
+  cards.forEach(cardData=>{
+
+    const card = document.createElement("div");
+    card.className = "card";
+    card.dataset.id = cardData.id;
+    card.dataset.audio = cardData.audio;
+    card.dataset.paired = "false";
+
+    const img = document.createElement("img");
+    img.src = cardData.image;
+    card.appendChild(img);
+
+    card.style.left = Math.random()*(board.clientWidth-140)+"px";
+    card.style.top  = Math.random()*(board.clientHeight-140)+"px";
+
+    if(flipMode==="hold"){
+      makeHold(card);
+    }else{
+      makeButton(card);
+    }
+
+    makeDrag(card);
+
+    board.appendChild(card);
+  });
+
+}
+
+function makeHold(card){
+
+  let startX,startY,moved=false;
+
+  card.addEventListener("pointerdown",e=>{
+
+    if(card.dataset.paired==="true") return;
+
+    startX=e.clientX;
+    startY=e.clientY;
+    moved=false;
+
+    holdTimer=setTimeout(()=>{
+
+      if(!moved){
+
+        card.classList.add("faceup");
+
+        const audio = new Audio(card.dataset.audio);
+        audio.play();
+
+        openCards.push(card);
+
+        if(openCards.length===2) checkPair();
+
+      }
+
+    },700);
+
+  });
+
+  card.addEventListener("pointermove",e=>{
+    if(Math.hypot(e.clientX-startX,e.clientY-startY)>MOVE_THRESHOLD){
+      moved=true;
+      clearTimeout(holdTimer);
+    }
+  });
+
+  card.addEventListener("pointerup",()=>clearTimeout(holdTimer));
+}
+
+function makeButton(card){
+
+  const btn=document.createElement("div");
+
+  btn.textContent="🔍";
+
+  btn.style.position="absolute";
+  btn.style.bottom="5px";
+  btn.style.right="5px";
+  btn.style.background="#fff";
+  btn.style.border="2px solid #333";
+  btn.style.borderRadius="8px";
+  btn.style.padding="4px 8px";
+  btn.style.fontSize="18px";
+  btn.style.cursor="pointer";
+
+  card.appendChild(btn);
+
+  btn.addEventListener("pointerdown",e=>{
+
+    e.stopPropagation();
+
+    if(card.dataset.paired==="true") return;
+
+    card.classList.add("faceup");
+
+    const audio = new Audio(card.dataset.audio);
+    audio.play();
+
+    openCards.push(card);
+
+    if(openCards.length===2) checkPair();
+
+  });
+
+}
+
+function checkPair(){
+
+  const [a,b]=openCards;
+
+  if(a.dataset.id === b.dataset.id){
+
+    a.dataset.paired="true";
+    b.dataset.paired="true";
+
+    a.classList.add(currentTeam);
+    b.classList.add(currentTeam);
+
+  }else{
+
+    setTimeout(()=>{
+      a.classList.remove("faceup");
+      b.classList.remove("faceup");
+    },1500);
+
+    switchTurn();
+
+  }
+
+  openCards=[];
+}
+
+function switchTurn(){
+
+  currentTeam=currentTeam==="blue"?"orange":"blue";
+
+  document.body.className=currentTeam+"Turn";
+
+  turnText.textContent=currentTeam==="blue"?"Blå":"Orange";
+}
+
+function makeDrag(el){
+
+  let ox,oy,activePointer=null;
+
+  el.addEventListener("pointerdown",e=>{
+    ox=e.clientX-el.offsetLeft;
+    oy=e.clientY-el.offsetTop;
+    activePointer=e.pointerId;
+    el.setPointerCapture(activePointer);
+  });
+
+  el.addEventListener("pointermove",e=>{
+    if(e.pointerId!==activePointer) return;
+    el.style.left=(e.clientX-ox)+"px";
+    el.style.top=(e.clientY-oy)+"px";
+  });
+
+  el.addEventListener("pointerup",()=>release());
+  el.addEventListener("pointercancel",()=>release());
+
+  function release(){
+    if(activePointer!==null){
+      el.releasePointerCapture(activePointer);
+      activePointer=null;
+    }
+  }
+}
+
+function shuffle(a){
+  for(let i=a.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+}
+
+</script>
+
+</body>
+</html>
